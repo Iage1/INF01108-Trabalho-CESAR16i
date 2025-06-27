@@ -1,0 +1,1168 @@
+;Words dos robos: [0:ativo/desativo |1:selecionado/nao |2:char1 |3:char2 |4:char3 |5:char4 |6:char5 |7:numero do robo em char |8:primeira ativacao/nao |9:Vx |10:Vy |11:PosicX |12:PosicY]
+
+;==========================================================================
+; Ãrea Reservada
+
+org h7f00
+STACK:
+
+; Acesso em 16 bits
+org hff80
+daw [31]		; Ãrea reservada
+IVET: dw 0		; Vetor de interrupÃ§Ã£o
+
+; Acesso em 8 bits (hffc0)
+dab [23]
+TIMDT:	db 0
+INTS:	db 0			; INTERRUPT STATUS: IP x x x . x x IPStec IPStim
+INTE:	db 0			; INTERRUPT ENABLE: IE x x x . x x IEStec IEStim
+TECST:	db 0			; Status do teclado
+TECDT:	db 0			; Dado do teclado
+VISOR:	dab [36]		; Portas de acesso ao visor
+
+
+;==========================================================================
+org h7000 ;Minhas variáveis
+robo1: daw [20]
+robo2: daw [20]
+robo3: daw [20]
+robo4: daw [20]
+tecla: dw       ; variável pra pegar a tecla nas interrupcoes
+varCharN: dw 	; váriavel para guardar um char referente ao numero do robo na funcao_n
+flagAtividade: dw	; flag para apontar nenhum robo ativo no loop, e imprimir a mensagem de "nao ha robos ativos"
+tick: dw		; variavel para contar as interrupcoes de timer (4 ticks -> 1seg)
+flag_nhrl: dw		; variavel para a exibicao de "nao ha robos livres" durar 2 segundos
+org h7100
+numero: dab '1234567'	; array de bytes para a funcao int2str
+
+; Programa principal
+org 0 
+
+; declaracao de constantes
+
+
+inicio: ; zera os atributos dos robôs, variáveis, registradores, ajusta as interrupções e atribui o número de cada robo como string numa posicao dos seus vetores
+	clr r1
+	clr r2
+	clr r3
+	clr r4
+	clr r5
+	mov #STACK, r6
+	
+	
+	loop_inicio: ; Loop para zerar as minhas variáveis
+		clr robo1(r0)
+		add #2, r0
+		cmp r0, #170   ; 85 palavras, 170 bytes
+		blt loop_inicio   
+	clr r0
+
+	mov #14, r0		; atribuicao da palavra 7 de cada robô
+	mov #'1', robo1(r0)
+	mov #'2', robo2(r0)
+	mov #'3', robo3(r0)
+	mov #'4', robo4(r0)
+	clr r0
+	
+	mov #isr, IVET 		; Seta a rotina de interrupção
+	mov #250, TIMDT		; Set timer para interromper a cada 250ms 
+	clr TECST  		; Reseta estado do hardware do teclado
+	clr INTS   		; Reseta pedidos de interrupcao
+
+	mov #h83, INTE 		; habilita interrupcoes de teclado e timer (1000 0010)
+	mov #-1, tecla  	; valor padrão pra tecla (nada acontece)
+	
+
+main:
+	mov #0, flagAtividade 	; resseta a flagAtividade 
+
+ativo_1:			; verifica atividade de cada robo 	
+	mov #2, r0		; r0 pra pegar a palavra 1 do robo (selecionado ou nao)
+	
+	cmp robo1, #0		; se o robo estiver inativo, vai pro proximo, do contrario verifica se ele é o selecionado
+	beq ativo_2
+	mov #1, flagAtividade	; se tem robo ativo, liga flag de atividade pra nao imprimir mensagem de nenhum robo ativo
+	cmp robo1(r0), #0
+	beq ativo_2		; se não é o selecionado, vai pro proximo, do contrario passa o robo como parametro pra funcao de exibir dados do robo no visor
+	mov #robo1, r1
+	jsr r7, display_dados_robos
+	
+	
+ativo_2:
+	mov #2, r0
+	cmp robo2, #0		
+	beq ativo_3
+	mov #1, flagAtividade
+	cmp robo2(r0), #0
+	beq ativo_3	
+	mov #robo2, r1
+	jsr r7, display_dados_robos
+
+ativo_3:
+	mov #2, r0
+	cmp robo3, #0		
+	beq ativo_4
+	mov #1, flagAtividade
+	cmp robo3(r0), #0
+	beq ativo_4	
+	mov #robo3, r1
+	jsr r7, display_dados_robos
+
+ativo_4:
+	mov #2, r0
+	cmp robo4, #0		
+	beq atividade
+	mov #1, flagAtividade
+	cmp robo4(r0), #0
+	beq atividade	
+	mov #robo4, r1
+	jsr r7, display_dados_robos
+	
+atividade:
+	cmp flagAtividade, #1	; se houver atividade, segue, do contrário faz display mostrar que nao ha robos ativos
+	beq checa_teclas
+	jsr r7, display_robos_parados
+	
+	clr r0
+	
+checa_teclas:
+
+	cmp tecla, #-1 ; ve se o valor de tecla é -1. Se não for, continua, do contrario volta pro main (muda nada)
+	bne tecla_n_lc
+	jmp main  
+
+tecla_n_lc:
+	cmp tecla, #'n' ; se tecla digitada não for 'n' ou 'N', segue, do contrário, ativa novo robo
+	bne tecla_n_uc
+	jmp funcao_n
+tecla_n_uc:
+	cmp tecla, #'N'
+	bne tecla_1
+	jmp funcao_n
+tecla_1:
+	cmp tecla, #'1'
+	bne tecla_2
+	mov #robo1, r0
+	jmp funcao_1234
+tecla_2:
+	cmp tecla, #'2'
+	bne tecla_3
+	mov #robo2, r0
+	jmp funcao_1234
+tecla_3:
+	cmp tecla, #'3'
+	bne tecla_4
+	mov #robo3, r0
+	jmp funcao_1234
+tecla_4:
+	cmp tecla, #'4'
+	bne tecla_r_lc
+	mov #robo4, r0
+	jmp funcao_1234
+tecla_r_lc:
+	cmp tecla, #'r'
+	bne tecla_r_uc
+	jmp funcao_r
+tecla_r_uc:
+	cmp tecla, #'R'
+	bne tecla_w_lc
+	jmp funcao_r
+tecla_w_lc:
+	cmp tecla, #'w'
+	bne tecla_w_uc
+	mov #'w', r4
+	jmp funcao_wasd
+tecla_w_uc:
+	cmp tecla, #'W'
+	bne tecla_a_lc
+	mov #'w', r4
+	jmp funcao_wasd
+tecla_a_lc:
+	cmp tecla, #'a'
+	bne tecla_a_uc
+	mov #'a', r4
+	jmp funcao_wasd
+tecla_a_uc:
+	cmp tecla, #'A'
+	bne tecla_s_lc
+	mov #'a', r4
+	jmp funcao_wasd
+tecla_s_lc:
+	cmp tecla, #'s'
+	bne tecla_s_uc
+	mov #'s', r4
+	jmp funcao_wasd
+tecla_s_uc:	
+	cmp tecla, #'S'
+	bne tecla_d_lc
+	mov #'s', r4
+	jmp funcao_wasd
+tecla_d_lc:
+	cmp tecla, #'d'
+	bne tecla_d_uc
+	mov #'d', r4
+	jmp funcao_wasd
+tecla_d_uc:
+	cmp tecla, #'D'
+	bne tecla_z_lc
+	mov #'d', r4
+	jmp funcao_wasd
+tecla_z_lc:
+	cmp tecla, #'z'
+	bne tecla_z_uc
+	mov #'z', r4
+	jmp funcao_wasd
+tecla_z_uc:
+	cmp tecla, #'Z'
+	bne fim_checa_teclas
+	mov #'z', r4
+	jmp funcao_wasd
+	
+fim_checa_teclas:
+	mov #-1, tecla 	; antes de acabar o loop, volta o valor de tecla pra -1 (pra não executar funções várias vezes)
+	jmp main
+
+;]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]TRATAMENTOS DO 'N'
+funcao_n:
+	; verificar qual o primeiro da ordem que não está ativo, para ativar
+
+	mov #-1, tecla   ; volta o valor de tecla pra -1 já ao entrar na função (necessário pra não executar várias vezes)
+
+	mov #robo1, r0		; armazena o endereco do robo no registrador r0	
+	mov #'1', varCharN  	; move o char correspondente ao numero do robo para uma variavel
+	cmp robo1, #0 		; checa se o bit de atividade do robô é 1/0 (ativo/desativo)
+	beq ativacao	  	; se estiver desativado, ativa, do contrario checa o proximo
+
+	mov #robo2, r0
+	mov #'2', varCharN
+	cmp robo2, #0
+	beq ativacao
+
+	mov #robo3, r0
+	mov #'3', varCharN
+	cmp robo3, #0
+	beq ativacao
+
+	mov #robo4, r0	
+	mov #'4', varCharN	
+	cmp robo4, #0
+	beq ativacao
+	
+	mov #1, flag_nhrl 
+
+loop_nhrl:
+	jsr r7, display_nao_ha_robos_livres	; se nenhum dos robos pode ser ativado, mostra a mensagem de "nao ha robos livres"
+	cmp flag_nhrl, #9
+	bne loop_nhrl
+	
+	clr flag_nhrl
+	clr r0
+	clr varCharN
+	jmp main
+	
+
+
+ativacao:
+
+	jsr r7, le_nome ; rotina para tratar a questao do nome 
+	
+	jsr r7, selecao_na_ativacao 	; rotina pra tratar uma possivel selecao automatica na ativacao do robo (se ele for o unico ativo)
+		
+	mov #1, (r0) 	; acende a flag de ativado no robo: move #1 pro endereço do endereço armazenado em roboTemp
+	
+	clr varCharN	; resseta as variáveis e registradores usados
+	clr r0
+	jmp main
+
+le_nome:
+	; se for a primeira ativacao do robo, vai informar o numero do robo, e solicitar ao usuário o nome do robo (5char, tratamento de backspace, finaliza com enter)
+	; R0 TEM O ENDERECO BASE DO ROBO, E R1 VAI SER COMO UM REGISTRADOR TEMPORARIO PARA ACESSAR OS OUTROS ENDERECOS, COMO UM MODO INDEXADO
+
+	
+	;mov r0, r1	; verifica se a flag de primeira ativação (palavra 8) é 1: se for, pula a rotina, do contrário continua
+	;add #16, r1	;Isso seria para nao mudar o nome na reativacao (teria que nao zerar os nomes na funcao_r tambem
+	;cmp (r1), #1	
+	;beq retorna_le_nome
+	
+	jsr r7, display_inserir_nome_do_robo 	; display informa o nome do robo e pede que usuário digite
+	mov #16, r3				; r3 será usado para percorrer o visor (comecando na casa 16)
+	mov #4, r2				; r2 será usado para percorrer o robo e armazenar os char do seu nome
+					
+	loop_le_nome:
+		cmp tecla, #-1 ; ve se o valor de tecla é -1 se for, continua no loop (muda nada)
+		beq loop_le_nome  
+		
+		cmp tecla, #h0D	; compara a tecla com o enter, pra ver se dá pra sair do loop
+		beq retorna_le_nome
+
+		cmp tecla, #h08 ; tratamento de backspace
+		beq tratamento_backspace
+		
+		cmp r3, #20			; se r3 for maior que 20 (5 char), pula a escrita no visor e no robo
+		bgt continua_loop_le_nome
+			
+		mov r0, r1		; armazena o char no endereco apropriado do robo, e incrementa 2 (prox palavra)
+		add r2, r1			
+		mov tecla, (r1)
+		inc r2
+		inc r2
+		
+		mov tecla, VISOR(r3)  ; escreve no visor e incrementa um (prox bloco do visor)
+		inc r3
+		
+	continua_loop_le_nome:
+		mov #-1, tecla
+		jmp loop_le_nome 
+	
+	tratamento_backspace:
+		cmp r3, #16		;se r3 for menor ou igual a 16 (inicio do campo do usuario), ignora o backspace
+		ble fim_backspace
+		
+		dec r2			;volta na ultima palavra escrita nos enderecos do robo e limpa
+		dec r2
+		mov r0, r1		
+		add r2, r1
+		clr (r1)
+		
+		dec r3			;volta no ultimo bloco do visor e limpa
+		clr VISOR(r3)
+	
+	fim_backspace:
+		mov #-1, tecla
+		jmp loop_le_nome
+
+retorna_le_nome:
+	mov r0, r1, 	; ativa a flag de primeira ativação: robo agora já foi acionado pela primeira vez
+	add #16, r1	; (palavra 8)
+	mov #1, (r1)
+	mov #-1, tecla
+	clr r1		; nao dar clr no r0
+	clr r2
+	clr r3
+	clr r4
+	clr r5
+	rts r7
+
+selecao_na_ativacao:	; checar se nao ha nenhum robo ativo, pra já selecionar aquele que sera ativado na volta da funcao
+			; nao alterar r0
+
+	cmp robo1, #1	; se ele verificar que já existe robo ativo, já pula pro final. Do contrario continua verificando
+	beq fim_selecao_na_ativacao
+	
+	cmp robo2, #1
+	beq fim_selecao_na_ativacao
+
+	cmp robo3, #1
+	beq fim_selecao_na_ativacao
+	
+	cmp robo4, #1
+	beq fim_selecao_na_ativacao
+	
+	mov r0, r1	; já seleciona o robo que sera ativo na volta da funcao
+	add #2, r1
+	mov #1, (r1)
+	
+	
+fim_selecao_na_ativacao:
+	clr r1
+	rts r7
+	
+	
+;]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]	
+
+;{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{TRATAMENTOS DE 1 2 3 4
+funcao_1234:
+	; seleciona robo com base na tecla apertada
+	; r0 tem o endereco do robo
+
+	mov #-1, tecla		; já volta a tecla pro -1
+ 
+	cmp (r0), #1		; primeiro verifica se o robo está ativado. Se nao, ignora a tecla apertada (pula pro final da funcao, nao seleciona o robo)
+	bne fim_funcao_1234
+	
+	
+	mov #2, r1		; r1 pra atuar no modo indexado, pegando a segunda palavra do vetor dos robos
+	mov #0, robo1(r1)	; Primeiro desceleciona todos os robos (só pra garantir)
+	mov #0, robo2(r1)
+	mov #0, robo3(r1)
+	mov #0, robo4(r1)
+	clr r1
+
+	mov r0, r1	; seleciona o robo, acendendo a posicao de memória para esse propósito 
+	add #2, r1
+	mov #1, (r1)	
+
+fim_funcao_1234:
+	clr r0
+	clr r1
+	jmp main
+
+;{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
+
+;""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""TRATAMENTOS DO R
+funcao_r:
+	;desativar o robo selecionado no momento, e automaticamente selecionar o proximo disponivel (se houver)
+	
+	mov #-1, tecla		; já resseta a tecla ao entrar na funcao
+	
+				; checa robos em busca do um selecionado
+	mov #2, r1		; r1 para atuar no modo indexado
+	
+	mov #robo1, r0		; r0 recebe endereco do robo para fins de passagem de parametro
+	cmp robo1(r1), #1	
+	beq desativacao
+	
+	mov #robo2, r0
+	cmp robo2(r1), #1 
+	beq desativacao
+	
+	mov #robo3, r0
+	cmp robo3(r1), #1
+	beq desativacao
+
+	mov #robo4, r0
+	cmp robo4(r1), #1
+	beq desativacao		; se chegou até aqui e nao foi pra desativacao, nenhum robo esta ativo, so volta pro main
+	
+	jmp fim_funcao_r
+	
+desativacao:
+				;r0 carrega o endereco do robo
+	clr r1
+	mov r0, r1
+			
+	mov #0, (r1)	; desativa o robo
+			
+	add #2, r1	; desceleciona o robo
+	mov #0, (r1)
+	
+	add #2, r1	; limpa o nome do robo
+	mov #0, (r1)
+	add #2, r1
+	mov #0, (r1)
+	add #2, r1
+	mov #2, (r1)
+	add #2, r1
+	mov #2, (r1)
+	add #2, r1
+	mov #2, (r1)
+	
+	add #6, r1	; zera velocidade horizontal 
+	mov #0, (r1)
+
+	add #2, r1	; zera velocidade vertical
+	mov #0, (r1)
+
+	clr r0
+	clr r1
+
+	mov #robo1, r0		; procura primeiro robo ativado para selecionar
+	cmp robo1, #1
+	beq selecao_pos_desativacao
+	
+	mov #robo2, r0
+	cmp robo2, #1
+	beq selecao_pos_desativacao
+
+	mov #robo3, r0
+	cmp robo3, #1
+	beq selecao_pos_desativacao
+
+	mov #robo4, r0
+	cmp robo4, #1
+	beq selecao_pos_desativacao	; se chegou aqui e nao tem ninguem ativado, pode voltar pro main que vai aparcer a mensagem apropriada
+	jmp fim_funcao_r
+
+selecao_pos_desativacao:
+	mov r0, r1
+	add #2, r1
+	
+	mov #1, (r1)	; seleciona o robo
+	
+					
+fim_funcao_r:
+	clr r0
+	clr r1
+	jmp main
+	
+;""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+;?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????TRATAMENTOS WASD e Z
+				;funcoes para aumentar a velocidade do robo na direcao e sentido desejado, ou ressetar todas
+funcao_wasd:
+				;funcao para passar endereco do robo selecionado para r0, como parametro para as funcoes que vem a seguir.
+				;NAO ALTERAR R4: CARREGA A MUDANCA QUE DEVE SER FEITA	
+	mov #-1, tecla
+
+	mov #2, r2
+	
+	robo_1_ars:			; checa cada robo para ver se é o selecionado
+		cmp robo1(r2), #1
+		bne robo_2_ars
+		mov #robo1, r0
+		jmp tratamento_wasd
+	robo_2_ars:
+		cmp robo2(r2), #1
+		bne robo_3_ars
+		mov #robo2, r0
+		jmp tratamento_wasd
+	robo_3_ars:
+		cmp robo3(r2), #1
+		bne robo_4_ars
+		mov #robo3, r0
+		jmp tratamento_wasd
+	robo_4_ars:
+		cmp robo4(r2), #1			;se chegou aqui e nao tem ninguem selecionado, pula o tratamento 
+		bne jump_pro_fim_wasd	
+		mov #robo4, r0
+		jmp tratamento_wasd
+	
+	jump_pro_fim_wasd:
+		jmp fim_funcao_wasd
+
+tratamento_wasd:
+	funcao_z:
+		cmp r4, #'z'
+		bne funcao_w	
+		mov r0, r1
+		add #18, r1
+		mov #0, (r1)
+		add #2, r1
+		mov #0, (r1)
+		jmp fim_funcao_wasd
+	funcao_w:
+		cmp r4, #'w'
+		bne funcao_a
+		mov r0, r1
+		add #20, r1
+		cmp (r1), #99		; limita Vy a 99
+		beq fim_funcao_wasd
+		add #1, (r1)
+		jmp fim_funcao_wasd
+	funcao_a:
+		cmp r4, #'a'
+		bne funcao_s
+		mov r0, r1
+		add #18, r1
+		cmp (r1), #-99		; limita Vx a -99
+		beq fim_funcao_wasd
+		add #-1, (r1)
+		jmp fim_funcao_wasd
+	funcao_s:
+		cmp r4, #'s'
+		bne funcao_d
+		mov r0, r1
+		add #20, r1
+		cmp (r1), #-99
+		beq fim_funcao_wasd	; limita Vy a -99
+		add #-1, (r1)
+		jmp fim_funcao_wasd
+	funcao_d:
+		cmp r4, #'d'
+		bne fim_funcao_wasd	
+		mov r0, r1
+		add #18, r1
+		cmp (r1), #99
+		beq fim_funcao_wasd	; limita Vx a 99
+		add #1, (r1)	
+		jmp fim_funcao_wasd
+		
+
+fim_funcao_wasd:
+	clr r0
+	clr r1
+	clr r2
+	clr r4
+	jmp main
+
+;??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+
+;-------------------------------------------------------------------------------------------------------------------------------------INT2STR
+int2str:
+	MOV	2(R6),R1				;Ponteiro da string de saída
+	MOV	4(R6),R2				;Número inteiro a ser convertido
+	
+	BPL	EhPositivo				;Se o número é positivo pula o tratamento de colocar o "-" no inicio do buffer
+
+	NEG	R2					;Transforma o número que queremos a string em positivo, se ele for negativo
+	
+	MOV	-1(R1),R0				;Prepara para escrever o "-" antes dos números da string
+	AND	#HFF00,R0 				;Zera o byte menos significativo para eventualmente receber o negativo
+	OR	#'-',R0					;Coloca o "-" no byte menos significativo do R0
+	MOV	R0,-1(R1)				;Coloca esse "-" no começo da string
+	INC	R1					;Passa efetivamente para a primeira posição dos números na string
+					
+
+EhPositivo:
+	MOV	R2,-(R6)				;Empilha o número a ser convertido, já obrigatoriamente positivo, para a chamada da próxima função que de fato
+	MOV	R1,-(R6)				;Empilha o endereço de escrita da string
+	JSR	R7,uint2str				;Função que de fato transforma esse número para string
+	ADD	#4,R6					;Atualiza a stack pointer para desempilhar os dois endereços usados na chamada da subrotina
+	
+	RTS	R7			; }
+	
+
+;**********************************************************
+; void uint2str(char *s, uint n)
+;	2(R6) -> s -> R1
+;	4(R6) -> n -> R2
+;
+;	Lacos  -> R5
+;	pTab10 -> R4
+;	dig    -> R3
+;
+;**********************************************************
+Tab10:		DAW	10000, 1000, 100, 10
+uint2str:
+	MOV	2(R6),R1				;Coloca o endereço da string de destino em R1
+	MOV	4(R6),R2				;Pega o número a ser convertido 
+
+	MOV	#Tab10,R4				;Coloca o ponteiro para Tab10(tabela de divisores) em R4
+	MOV	#4,R5					;Como temos suporte para números até a casa do 10000, definimos 4 laços, o que também ocorre porque é definido que o tamanho máximo que pode ser convertido é de 6, sendo 1 espaço para o "-" e outro para o terminador nulo, o que totaliza 6 espaços
+	
+Loop:				
+	MOV	#'0',R3				;R3 começa no "0" em ascii, e cada vez que o divisor é incrementado em 1 passamos para o próximo número em ASCII
+
+LoopInterno:
+	CMP	R2,(R4)				;Compara n com Tab10, que começa em 10
+	BLT	EhMenor				;Se n for menor que o divisor, sai do loop interno
+	INC	R3					;Se não for menor passa para o próximo número em ASCII
+	SUB	(R4),R2		 		;Subtrai do número que queremos converter o número que estamos atualmente na tabela. Então, por exemplo se queremos o 30000, fazemos 30000-10000, porque começamos no 10000 no TAB, agora n passa a ser 20000
+	JMP	LoopInterno	 		;Volta para o loop interno para continuar fazendo os descontos do número que queremos em relação a tabela
+
+EhMenor:
+	MOV	-1(R1),R0				;Se o número for menor, ou seja, se estamos em 9000, e o valor da tabela era 10000, caimos aqui, o que significa que temos que passar para o próximo número da tabela
+	AND	#HFF00,R0				;Limpa o byte menos significativo de onde vamos inserir o número
+	OR	R3,R0					;Coloca o número que calculamos no loop interno no R0
+	MOV	R0,-1(R1)				;Escreve no endereço atual esse número 
+	INC	R1					;Passa para o próxima posição que devemos escrever o número
+	
+	ADD	#2,R4					;Avança para a próxima posição da Tab10
+
+	SOB	R5,Loop				;Decrementa R5 (que é a quantidade de números que devemos analisar), se não for 0, volta para o loop
+	
+	ADD	#'0',R2				;Converte a casa das unidades (última a ser analisada) para string
+	MOV	-1(R1),R0				
+	AND	#HFF00,R0				
+	OR	R2,R0
+	MOV	R0,-1(R1)
+	INC	R1
+	
+	MOV	-1(R1),R0				;Garante a colocação do terminador NULL(byte completamente zerado) ao final da string		
+	AND	#HFF00,R0
+	MOV	R0,-1(R1)
+	
+	RTS	R7
+
+
+;--------------------------------------------------------------------------------------------------------------------------------------
+
+;/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////FUNCOES DISPLAYS	
+
+
+
+display_nao_ha_robos_livres:
+    	clr 65500
+    	clr 65501
+    	clr 65502
+    	clr 65503
+    	clr 65504
+    	clr 65505
+    	clr 65506
+    	clr 65507
+    	mov #h4E, 65508
+    	mov #h41, 65509
+    	mov #h4F, 65510
+    	mov #h20, 65511
+    	mov #h48, 65512
+    	mov #h41, 65513
+    	mov #h20, 65514
+    	mov #h52, 65515
+    	mov #h4F, 65516
+    	mov #h42, 65517
+    	mov #h4F, 65518
+    	mov #h53, 65519
+    	mov #h20, 65520
+    	mov #h4C, 65521
+    	mov #h49, 65522
+    	mov #h56, 65523
+    	mov #h52, 65524
+    	mov #h45, 65525
+    	mov #h53, 65526
+    	clr 65527
+    	clr 65528
+    	clr 65529
+    	clr 65530
+    	clr 65531
+    	clr 65532
+    	clr 65533
+    	clr 65534
+    	clr 65535
+    	rts r7
+
+display_dados_robos:	; "NomeR X: 0000 Y: 0000 Vx: 00 Vy: 00 "
+			; nao mexer em r0 , r1 possui o endereco do robo
+			; Essa funcao é um desastre, mas funciona
+	
+	mov r1, r2	
+	add #4, r2
+	mov (r2), 65500
+	add #2, r2  
+    	mov (r2), 65501
+	add #2, r2
+    	mov (r2), 65502
+	add #2, r2  
+    	mov (r2), 65503
+	add #2, r2
+    	mov (r2), 65504  
+    	mov #h20, 65505
+    	mov #h58, 65506  
+    	mov #h3A, 65507  
+	
+	add #10, r2			;pega posicX
+	mov (r2), r5
+
+	tst r5
+	bmi neg_posicX
+
+	mov #h20, 65508			
+	mov r1, -(r6)			;TEM QUE GUARDAR R1 NA PILHA, SE NAO PERDE ENDERECO DO ROBO
+	mov (r2), -(r6)
+	mov #numero, -(r6)
+	jsr r7, int2str
+	add #4, r6
+	mov (r6)+, r1
+	
+	clr r4
+
+	mov numero(r4), 65509
+	inc r4
+   	mov numero(r4), 65510 	;milhar
+	inc r4
+	mov numero(r4), 65511  ;centena
+	inc r4
+	mov numero(r4), 65512 	;dezena
+	inc r4
+    	mov numero(r4), 65513  ;unidade
+
+	jmp continua_display1
+neg_posicX:
+
+	mov #'-', 65508
+	mov r1, -(r6)	
+	mov (r2), -(r6)
+	mov #numero, -(r6)
+	jsr r7, int2str
+	add #4, r6
+	mov (r6)+, r1
+
+	clr r4
+	inc r4
+	
+	mov numero(r4), 65509
+	inc r4
+	mov numero(r4), 65510  	;centena
+	inc r4
+	mov numero(r4), 65511 	;dezena
+	inc r4
+    	mov numero(r4), 65512  	;unidade
+	
+	mov #h20, 65513
+
+continua_display1:
+	mov #h59, 65514  
+    	mov #h3A, 65515  
+	
+	mov r1, r2	;pega posicY
+	add #24, r2		
+	mov (r2), r5
+
+	tst r5
+	bmi neg_posicY
+	
+	mov #h20, 65516
+	mov r1, -(r6)	
+	mov (r2), -(r6)
+	mov #numero, -(r6)
+	jsr r7, int2str
+	add #4, r6
+	mov (r6)+, r1
+	
+	clr r4
+
+	mov numero(r4), 65517
+	inc r4
+   	mov numero(r4), 65518 	;milhar
+	inc r4
+	mov numero(r4), 65519  ;centena
+	inc r4
+	mov numero(r4), 65520 	;dezena
+	inc r4
+    	mov numero(r4), 65521  ;unidade
+	jmp continua_display2
+neg_posicY:
+	mov #'-', 65516
+	mov r1, -(r6)	
+	mov (r2), -(r6)
+	mov #numero, -(r6)
+	jsr r7, int2str
+	add #4, r6
+	mov (r6)+, r1
+	
+	clr r4
+	inc r4
+	
+	mov numero(r4), 65517
+	inc r4
+	mov numero(r4), 65518  	;centena
+	inc r4
+	mov numero(r4), 65519 	;dezena
+	inc r4
+    	mov numero(r4), 65520  	;unidade
+	
+	mov #20, 65521
+
+continua_display2:
+
+	mov #h56, 65522  
+    	mov #h78, 65523  
+    	mov #h3A, 65524 
+ 
+    	mov r1, r2
+	add #18, r2
+	mov (r2), r5
+	
+	tst r5
+	bmi neg_vx
+	
+	mov #h20, 65525	
+	
+	mov r1, -(r6)	
+	mov (r2), -(r6)
+	mov #numero, -(r6)
+	jsr r7, int2str
+	add #4, r6
+	mov (r6)+, r1
+
+	clr r4
+		
+	inc r4
+	inc r4
+	mov numero(r4), 65526
+	inc r4
+	mov numero(r4), 65527
+	inc r4
+	mov numero(r4), 65528
+	jmp continua_display3
+
+neg_vx:
+	mov #'-', 65525	
+	
+	mov r1, -(r6)	
+	mov (r2), -(r6)
+	mov #numero, -(r6)
+	jsr r7, int2str
+	add #4, r6
+	mov (r6)+, r1
+
+	clr r4
+	inc r4
+	
+	inc r4
+	inc r4
+	mov numero(r4), 65526
+	inc r4
+	mov numero(r4), 65527
+	inc r4
+	mov numero(r4), 65528
+
+continua_display3: 
+    	mov #h56, 65529  
+    	mov #h79, 65530  
+    	mov #h3A, 65531  
+    	
+	mov r1, r2
+	add #20, r2
+	mov (r2), r5
+	
+	tst r5
+	bmi neg_vy
+	
+	mov #h20, 65532	
+	
+	mov r1, -(r6)	
+	mov (r2), -(r6)
+	mov #numero, -(r6)
+	jsr r7, int2str
+	add #4, r6
+	mov (r6)+, r1
+	
+	clr r4
+		
+	inc r4
+	inc r4
+	mov numero(r4), 65533
+	inc r4
+	mov numero(r4), 65534
+	inc r4
+	mov numero(r4), 65535
+	jmp fim_display
+neg_vy:
+	mov #'-', 65532
+	
+	mov r1, -(r6)	
+	mov (r2), -(r6)
+	mov #numero, -(r6)
+	jsr r7, int2str
+	add #4, r6
+	mov (r6)+, r1
+
+	clr r4
+	inc r4
+	
+	inc r4
+	inc r4
+	mov numero(r4), 65533
+	inc r4
+	mov numero(r4), 65534
+	inc r4
+	mov numero(r4), 65535
+	
+
+
+
+fim_display:
+	clr r1
+	clr r2
+	clr r3
+	clr r4
+	rts r7
+
+display_robos_parados:
+    	clr 65500
+    	clr 65501
+    	clr 65502
+    	clr 65503
+    	clr 65504
+   	clr 65505
+   	clr 65506
+    	clr 65507
+    	clr 65508
+    	clr 65509
+    	clr 65510
+    	mov #h52, 65511 
+    	mov #h4F, 65512 
+    	mov #h42, 65513
+    	mov #h4F, 65514 
+    	mov #h53, 65515 
+    	mov #h20, 65516 
+    	mov #h50, 65517 
+    	mov #h41, 65518 
+    	mov #h52, 65519 
+    	mov #h41, 65520 
+    	mov #h44, 65521 
+    	mov #h4F, 65522 
+	mov #h53, 65523
+	clr 65524
+    	clr 65525
+    	clr 65526
+    	clr 65527
+    	clr 65528
+    	clr 65529
+    	clr 65530
+    	clr 65531
+    	clr 65532
+    	clr 65533
+    	clr 65534
+    	clr 65535 
+    	rts r7
+
+display_inserir_nome_do_robo: ;NOME DO ROBO varCharN: 
+    	mov #h4E, 65500  
+    	mov #h4F, 65501  
+    	mov #h4D, 65502  
+    	mov #h45, 65503  
+    	mov #h20, 65504  
+    	mov #h44, 65505  
+   	mov #h4F, 65506  
+    	mov #h20, 65507 
+    	mov #h52, 65508  
+    	mov #h4F, 65509  
+    	mov #h42, 65510  
+    	mov #h4F, 65511 
+    	mov #h20, 65512  
+    	mov varCharN, 65513 
+    	mov #h3A, 65514   
+    	clr 65515
+    	clr 65516
+    	clr 65517
+    	clr 65518
+    	clr 65519
+    	clr 65520
+    	clr 65521
+    	clr 65522
+    	clr 65523
+    	clr 65524
+   	clr 65525
+    	clr 65526
+    	clr 65527
+    	clr 65528
+    	clr 65529
+    	clr 65530
+    	clr 65531
+    	clr 65532
+    	clr 65533
+    	clr 65534
+    	clr 65535
+    	rts r7
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////
+;======================================================================================================
+isr: ; subrotina de interrupção
+
+	mov		r0,-(r6)  ; 1)Salva registradores
+	mov		r1,-(r6)
+	mov		r2,-(r6)
+	mov		r3,-(r6)
+	mov		r4,-(r6)
+	mov		r5,-(r6)
+
+				  ; 2)Lógica 
+	
+	mov INTS, r0    
+			; verifica se a interrupção é do teclado (máscara)
+	mov r0, r1
+	and #2, r1      ; (se acender a flag z=1, beq vai para checar se foi int do timer, não foi int do teclado)
+	beq checa_timer	
+	
+	jsr r7, isr_tec 	; do contrário, faz o tratamento da interrupção de teclado
+	and #hfffd, ints	; desliga bit de INT TECLADO (pra poder detectar futuras interrupções)
+	jmp fim_isr
+
+checa_timer:
+			;verifica se a interrupcão é do timer 
+	mov r0, r1
+	and #1, r1	
+	beq fim_isr	;se nao for, vai pro fim. Do contrario, segue para a rotina de tratamento para o timer
+	
+	jsr r7, isr_tim
+	and #hfffe, ints	; desliga o bit de INT TIMER 
+
+fim_isr:
+	mov		(r6)+,r5	;3) Retorna os registradores da pilha
+	mov		(r6)+,r4
+	mov		(r6)+,r3
+	mov		(r6)+,r2
+	mov		(r6)+,r1
+	mov		(r6)+,r0
+
+	rti   ; sai da interrupção
+
+isr_tec:   ;2)
+	
+	mov TECDT, tecla ; atribui à variável "tecla" o dado digitado 					
+	clr TECST    	 ; limpa o status, para poder pegar outras teclas futuramente			
+	rts r7		 ; retorna 								
+
+isr_tim:	
+	inc tick 		; incrementa o tick	
+	cmp tick, #4 		; se o tick for igual a 4 (1seg) faz os calculos, do contrario vai pro fim
+	beq robo_1_isr
+	jmp fim_isr_tim
+			
+robo_1_isr:			; procura quais robos estao ativos, para realizar os calculos
+	
+	clr tick		; já limpa o tick para futuras interrupcoes
+
+	cmp robo1, #1		;r2 RECEBE ENDERECO DO ROBO, r3 PERCORRERÁ O VETOR DO ROBO, r4 E r5 COMO OS OPERANDOS (V E POSIC)
+	bne robo_2_isr
+	
+	mov #robo1, r2	
+	jsr r7, calculo_isr
+
+robo_2_isr:
+	cmp robo2, #1
+	bne robo_3_isr
+
+	mov #robo2, r2
+	jsr r7, calculo_isr
+	
+robo_3_isr:
+	cmp robo3, #1
+	bne robo_4_isr
+
+	mov #robo3, r2
+	jsr r7, calculo_isr
+
+robo_4_isr:
+	cmp robo4, #1
+	bne fim_isr_tim
+
+	mov #robo4, r2
+	jsr r7, calculo_isr
+	
+fim_isr_tim:	
+	cmp flag_nhrl, #0
+	beq return_isr_tim
+	inc flag_nhrl
+	
+return_isr_tim:
+	rts r7
+
+calculo_isr:		; recebe r2 como parametro (endereco do robo)
+			; Direcao x:
+	mov r2, r3	; move o endereco para r3
+	add #18, r3	; r3 tem o endereco de Vx agora
+	mov (r3), r4	; armazena o valor de Vx em r4
+	add #4, r3	; r3 tem o endereco de posicX agora
+	mov (r3), r5	; armazena o valor de posicX
+	
+	add r4, r5	; faz a soma posicX = posicX + Vx
+	
+limite_sup_x_isr:
+	cmp r5, #9999		; ve se o valor superou o limite. Se sim, atribui o limite ao valor e zera a velocidade na direcao
+	blt limite_inf_x_isr
+	mov #9999, r5
+	
+	jmp fim_calculo_x_isr
+
+limite_inf_x_isr:
+	cmp r5, #-9999	
+	bgt fim_calculo_x_isr	
+	mov #-9999, r5
+
+	jmp fim_calculo_x_isr
+
+fim_calculo_x_isr:
+	mov r5, (r3)	; salva o novo valor de posicX no espaco adequado do robo
+
+
+			;Direcao y:
+	mov r2, r3	
+	add #20, r3
+	mov (r3), r4
+	add #4, r3
+	mov (r3), r5
+
+	add r4, r5
+	
+limite_sup_y_isr:
+	cmp r5, #9999		; ve se o valor superou o limite. Se sim, atribui o limite ao valor e zera a velocidade na direcao
+	blt limite_inf_y_isr
+	mov #9999, r5
+	
+
+	jmp fim_calculo_y_isr
+
+limite_inf_y_isr:
+	cmp r5, #-9999	
+	bgt fim_calculo_y_isr	
+	mov #-9999, r5
+
+	jmp fim_calculo_y_isr
+
+fim_calculo_y_isr:
+	mov r5, (r3)
+	clr r3
+
+	rts r7
+;========================================================================================================       

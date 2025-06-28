@@ -1,5 +1,3 @@
 #Ignora arquivos gerados automaticamente pelo montador Daedalus
 *.mem
 *.map
-
-.vscode/
